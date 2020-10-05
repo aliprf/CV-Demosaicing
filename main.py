@@ -12,6 +12,17 @@ from tqdm import tqdm
 import math
 
 
+def load_images():
+    img_path = './imgs/'
+    b_imgs = []
+    inp_imgs = []
+    for file in tqdm(os.listdir(img_path)):
+        if str(file).startswith("b"):
+            b_imgs.append(np.array(Image.open(img_path + file)))
+            inp_imgs.append(np.array(Image.open(img_path + str(file).split('_')[1])))
+    return b_imgs, inp_imgs
+
+
 def show_img(img, prefix):
     p_img = Image.fromarray(img.astype(np.uint8), 'RGB')
     p_img.save(prefix + '.png')
@@ -25,8 +36,7 @@ def get_x_at_y(rgb_d, x_pixel, y_pixel, c):
         print('both are -1')
     for ch in channels:
         if rgb_d[x_pixel, y_pixel, ch] != -1:
-            break
-    return c, ch
+            return c, ch
 
 
 def calc_green_at_red_or_blue(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel):
@@ -153,12 +163,16 @@ def bayer(rgb_d, x_pixel, y_pixel, c):
     return _avg
 
 
-def Demosaicing(b_imgs, inp_imgs):
+def demosaicing(b_imgs, inp_imgs):
     """
     :param b_imgs: list of a 2d images {w*h}
     :param inp_imgs: list of rgb images {w*h*3}
-    :return:
+    :return:input_img_arr, bl_img_arr, hq_img_arr
     """
+    input_img_arr = []
+    bl_img_arr = []
+    hq_img_arr = []
+
     R = 0
     G = 1
     B = 2
@@ -193,26 +207,38 @@ def Demosaicing(b_imgs, inp_imgs):
                         rgb_d[x_pixel, y_pixel, c] = b_pixel
                         '''improved Linear interpolation'''
                         rgb_d_imp[x_pixel, y_pixel, c] = gradient(b_pixel, rgb_d_base, x_pixel, y_pixel, c)
-        '''save biLinear results'''
+        '''save biLinear/hq results'''
         show_img(rgb_d, "1_bay_" + str(index))
-        '''save improved results'''
         show_img(rgb_d_imp, "2_imp_" + str(index))
+
+        '''saving imgs in mem'''
+        input_img_arr.append(inp_imgs[index])
+        bl_img_arr.append(rgb_d)
+        hq_img_arr.append(rgb_d_imp)
         index += 1
+    return input_img_arr, bl_img_arr, hq_img_arr
 
 
-def load_images():
-    img_path = './imgs/'
-    b_imgs = []
-    inp_imgs = []
-    for file in tqdm(os.listdir(img_path)):
-        if str(file).startswith("b"):
-            b_imgs.append(np.array(Image.open(img_path + file)))
-            inp_imgs.append(np.array(Image.open(img_path + str(file).split('_')[1])))
-    return b_imgs, inp_imgs
+def cal_loss(i_img_arr, o_img_arr):
+    R_2 = 255.0 * 255.0
+    mse_arr = []
+    psnr_arr = []
+    for i in range(len(i_img_arr)):
+        '''MSE'''
+        mse = np.square(i_img_arr[i].flatten() - o_img_arr[i].flatten()).mean(axis=-1)
+        mse_arr.append(mse)
+        '''PSNR'''
+        psnr = 10 * np.log10(R_2/mse)
+        psnr_arr.append(psnr)
+    return mse_arr, psnr_arr
 
 
 if __name__ == '__main__':
     '''we first load the images in the path'''
 
     b_imgs, inp_imgs = load_images()
-    Demosaicing(b_imgs, inp_imgs)
+    input_img_arr, bl_img_arr, hq_img_arr = demosaicing(b_imgs, inp_imgs)
+    mse_bl, psnr_bl = cal_loss(input_img_arr, bl_img_arr)
+    mse_hg, psnr_hq = cal_loss(input_img_arr, hq_img_arr)
+    print("BL->MSE: " + str(mse_bl) + "AVG: " + str(np.mean(mse_bl)) + "     BL->PSNR: " + str(psnr_bl) + "     AVG: " + str(np.mean(psnr_bl)))
+    print("HQ->MSE: " + str(mse_hg) + "AVG: " + str(np.mean(mse_hg)) + "     HQ->PSNR: " + str(psnr_hq) + "     AVG: " + str(np.mean(psnr_hq)))
