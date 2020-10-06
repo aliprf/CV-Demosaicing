@@ -1,5 +1,8 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+*.pdf
+*.zip
+*.odt
 imgs/*
 *.csv
 *.mat
