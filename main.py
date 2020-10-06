@@ -29,7 +29,9 @@ def show_img(img, prefix):
     # img.show()
 
 
-def get_x_at_y(rgb_d, x_pixel, y_pixel, c):
+def get_x_at_y(rgb_d, x_pixel, y_pixel, c, rgb_map):
+    # return c, int(rgb_map[x_pixel, y_pixel])
+
     channels = [0, 1, 2]
     channels.remove(c)
     if rgb_d[x_pixel, y_pixel, channels[0]] == -1 and rgb_d[x_pixel, y_pixel, channels[1]] == -1:
@@ -39,7 +41,7 @@ def get_x_at_y(rgb_d, x_pixel, y_pixel, c):
             return c, ch
 
 
-def calc_green_at_red_or_blue(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel):
+def calc_green_at_red_or_blue(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel, grad_weight):
     w = rgb_d.shape[0]
     h = rgb_d.shape[1]
     main_channel = rgb_d[:, :, pixel]
@@ -51,11 +53,12 @@ def calc_green_at_red_or_blue(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel)
         opposite_ch_data = 4 * opposite_channel[x_pixel, y_pixel] - (
                 opposite_channel[x_pixel - 2, y_pixel] + opposite_channel[x_pixel + 2, y_pixel] +
                 opposite_channel[x_pixel, y_pixel - 2] + opposite_channel[x_pixel, y_pixel + 2])
-        value = (main_ch_data + opposite_ch_data) / 9
+        # value = (main_ch_data + grad_weight * opposite_ch_data) / 8
+        value = (main_ch_data + opposite_ch_data) / 8
     return value
 
 
-def calc_red_blue_at_versa(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel):
+def calc_red_blue_at_versa(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel, grad_weight):
     w = rgb_d.shape[0]
     h = rgb_d.shape[1]
     opposite_channel = rgb_d[:, :, at_pixel]
@@ -70,11 +73,12 @@ def calc_red_blue_at_versa(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel):
                                                                                opposite_channel[x_pixel + 2, y_pixel] +
                                                                                opposite_channel[x_pixel, y_pixel - 2] +
                                                                                opposite_channel[x_pixel, y_pixel + 2])
-        value = (main_ch_data + opposite_ch_data) / 9
+        # value = (main_ch_data + grad_weight * opposite_ch_data) / 8
+        value = (main_ch_data + opposite_ch_data) / 8
     return value
 
 
-def calc_red_blue_at_green(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel):
+def calc_red_blue_at_green(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel, grad_weight):
     w = rgb_d.shape[0]
     h = rgb_d.shape[1]
     main_channel = rgb_d[:, :, pixel]
@@ -98,24 +102,28 @@ def calc_red_blue_at_green(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel):
         else:
             assert 'error'
 
-        value = (5 * opposite_channel[x_pixel, y_pixel] + vert_hor_data + main_ch_data + cross_data) / 11
+        # value = (main_ch_data + grad_weight * (5 * opposite_channel[x_pixel, y_pixel] + vert_hor_data + cross_data)) / 8
+        value = (main_ch_data + (5 * opposite_channel[x_pixel, y_pixel] + vert_hor_data + cross_data)) / 8
     return value
 
 
-def gradient(b_pixel, rgb_d, x_pixel, y_pixel, c):
+def malver_interpolation(b_pixel, rgb_d, x_pixel, y_pixel, c, rgb_map):
+    weights = [0.5, 0.625, 0.75]
     R = 0
     G = 1
     B = 2
-    pixel, at_pixel = get_x_at_y(rgb_d, x_pixel, y_pixel, c)
-
+    pixel, at_pixel = get_x_at_y(rgb_d, x_pixel, y_pixel, c, rgb_map)
+    grad_weight = weights[at_pixel]
+    '''calculate gradients'''
     if pixel == G and (at_pixel == R or at_pixel == B):
-        _val = calc_green_at_red_or_blue(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel)
+        _val = calc_green_at_red_or_blue(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel, grad_weight)
     elif (pixel == R and at_pixel == B) or (pixel == B and at_pixel == R):
-        _val = calc_red_blue_at_versa(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel)
+        _val = calc_red_blue_at_versa(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel, grad_weight)
     elif (pixel == R or pixel == B) and at_pixel == G:
-        _val = calc_red_blue_at_green(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel)
+        _val = calc_red_blue_at_green(b_pixel, rgb_d, x_pixel, y_pixel, pixel, at_pixel, grad_weight)
     else:
         assert "error"
+
     return _val
 
 
@@ -182,16 +190,22 @@ def demosaicing(b_imgs, inp_imgs):
         #     img = img[:, :, 0]
         '''Demosaicing:'''
         rgb_d = np.zeros([img.shape[0], img.shape[1], 3]) - 1
+        rgb_map = np.zeros([img.shape[0], img.shape[1]])
         for x_pixel in range(0, rgb_d.shape[0], 2):
             for y_pixel in range(0, rgb_d.shape[1], 2):
                 pixel_value = img[x_pixel, y_pixel]
                 rgb_d[x_pixel, y_pixel, B] = pixel_value
+                rgb_map[x_pixel, y_pixel] = B
+
                 if x_pixel + 1 < rgb_d.shape[0]:
                     rgb_d[x_pixel + 1, y_pixel, G] = img[x_pixel + 1, y_pixel]
+                    rgb_map[x_pixel + 1, y_pixel] = G
                 if y_pixel + 1 < rgb_d.shape[1]:
                     rgb_d[x_pixel, y_pixel + 1, G] = img[x_pixel, y_pixel + 1]
+                    rgb_map[x_pixel, y_pixel + 1] = G
                 if x_pixel + 1 < rgb_d.shape[0] and y_pixel + 1 < rgb_d.shape[1]:
                     rgb_d[x_pixel + 1, y_pixel + 1, R] = img[x_pixel + 1, y_pixel + 1]
+                    rgb_map[x_pixel + 1, y_pixel + 1] = R
 
         rgb_d_imp = rgb_d.copy()
         rgb_d_base = rgb_d.copy()
@@ -206,7 +220,7 @@ def demosaicing(b_imgs, inp_imgs):
                         b_pixel = bayer(rgb_d, x_pixel, y_pixel, c)
                         rgb_d[x_pixel, y_pixel, c] = b_pixel
                         '''improved Linear interpolation'''
-                        rgb_d_imp[x_pixel, y_pixel, c] = gradient(b_pixel, rgb_d_base, x_pixel, y_pixel, c)
+                        rgb_d_imp[x_pixel, y_pixel, c] = malver_interpolation(b_pixel, rgb_d_base, x_pixel, y_pixel, c, rgb_map)
         '''save biLinear/hq results'''
         show_img(rgb_d, "1_bay_" + str(index))
         show_img(rgb_d_imp, "2_imp_" + str(index))
