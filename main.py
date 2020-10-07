@@ -124,6 +124,11 @@ def malver_interpolation(b_pixel, rgb_d, x_pixel, y_pixel, c, rgb_map):
     else:
         assert "error"
 
+    if _val < 0:
+        _val = 0
+    elif _val > 255:
+        _val = 255
+
     return _val
 
 
